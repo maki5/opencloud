@@ -115,6 +115,9 @@ func (t Tika) Extract(ctx context.Context, ri *provider.ResourceInfo) (Document,
 		if v := t.getMotionPhoto(meta); v != nil {
 			doc.MotionPhoto = v
 		}
+		if v := t.getLivePhoto(meta); v != nil {
+			doc.LivePhoto = v
+		}
 	}
 
 	// verify against the file itself: a shared motion photo can keep the XMP but
