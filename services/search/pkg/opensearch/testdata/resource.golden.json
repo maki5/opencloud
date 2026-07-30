@@ -250,6 +250,16 @@
             "type": "date"
           }
         }
+      },
+      "preview": {
+        "properties": {
+          "height": {
+            "type": "integer"
+          },
+          "width": {
+            "type": "integer"
+          }
+        }
       }
     }
   },
