@@ -13,6 +13,7 @@ import (
 
 	searchMessage "github.com/opencloud-eu/opencloud/protogen/gen/opencloud/messages/search/v0"
 	searchService "github.com/opencloud-eu/opencloud/protogen/gen/opencloud/services/search/v0"
+	"github.com/opencloud-eu/opencloud/services/search/pkg/content"
 	"github.com/opencloud-eu/opencloud/services/search/pkg/opensearch"
 	opensearchtest "github.com/opencloud-eu/opencloud/services/search/pkg/opensearch/internal/test"
 	"github.com/opencloud-eu/opencloud/services/search/pkg/search"
@@ -687,4 +688,89 @@ var _ = Describe("Backend", func() {
 			Expect(resourceByID(tc, indexName, other.ID).Path).To(Equal(other.Path), "resource in a different root must not be moved")
 		})
 	})
+	Describe("Semantic search", func() {
+		const indexName = "opencloud-test-engine-semantic"
+
+		var (
+			tc      *opensearchtest.TestClient
+			backend *opensearch.Backend
+		)
+
+		BeforeEach(func() {
+			tc = opensearchtest.NewDefaultTestClient(GinkgoTB(), defaultConfig.Engine.OpenSearch.Client)
+			tc.Require.IndicesReset([]string{indexName})
+			deleteIndexOnCleanup(tc, indexName)
+
+			var err error
+			backend, err = opensearch.NewBackend(indexName, tc.Client(), opensearch.WithTextVectorizer(fakeVectorizer{
+				byText: map[string][]float32{
+					"cat": axisVector(0),
+					"dog": axisVector(1),
+				},
+			}))
+			Expect(err).ToNot(HaveOccurred())
+
+			upsert := func(id, path, name string, vector []float32) {
+				r := opensearchtest.Testdata.Resources.File
+				r.ID = id
+				r.Path = path
+				r.Name = name
+				r.ImageVector = vector
+				Expect(backend.Upsert(id, r)).To(Succeed())
+			}
+			upsert("1$1!10", "./cat.jpg", "cat.jpg", axisVector(0))
+			upsert("1$1!11", "./dog.jpg", "dog.jpg", axisVector(1))
+			upsert("1$1!12", "./note.txt", "note.txt", nil)
+			tc.Require.IndicesRefresh([]string{indexName}, nil)
+		})
+
+		It("ranks the nearest image first for a purely semantic query", func() {
+			resp, err := backend.Search(context.Background(), &searchService.SearchIndexRequest{Query: `semantic:"cat"`})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resp.Matches).ToNot(BeEmpty())
+			Expect(resp.Matches[0].Entity.Name).To(Equal("cat.jpg"))
+			// the only honest total is the number of semantic hits
+			Expect(resp.TotalMatches).To(Equal(int32(2)))
+		})
+
+		It("combines a semantic clause with a filter part", func() {
+			resp, err := backend.Search(context.Background(), &searchService.SearchIndexRequest{Query: `Name:dog* AND semantic:"cat"`})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resp.Matches).To(HaveLen(1))
+			Expect(resp.Matches[0].Entity.Name).To(Equal("dog.jpg"))
+			Expect(resp.TotalMatches).To(Equal(int32(1)))
+		})
+
+		It("keeps semantic inside a quoted value literal", func() {
+			resp, err := backend.Search(context.Background(), &searchService.SearchIndexRequest{Query: `Name:"*semantic:cat*"`})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resp.Matches).To(BeEmpty())
+		})
+
+		It("rejects semantic queries without a vectorizer", func() {
+			bare, err := opensearch.NewBackend(indexName, tc.Client())
+			Expect(err).ToNot(HaveOccurred())
+			_, err = bare.Search(context.Background(), &searchService.SearchIndexRequest{Query: `semantic:"cat"`})
+			Expect(err).To(MatchError(ContainSubstring("not configured")))
+		})
+	})
 })
+
+// axisVector returns a one-hot vector of the schema dimensionality: distinct
+// axes are orthogonal (cosine 0), same axes identical (cosine 1).
+func axisVector(axis int) []float32 {
+	v := make([]float32, content.ImageVectorDims)
+	v[axis] = 1
+	return v
+}
+
+// fakeVectorizer maps query texts to fixed vectors.
+type fakeVectorizer struct{ byText map[string][]float32 }
+
+func (f fakeVectorizer) VectorizeText(_ context.Context, text string) ([]float32, error) {
+	v, ok := f.byText[strings.ToLower(text)]
+	if !ok {
+		return nil, fmt.Errorf("no vector for %q", text)
+	}
+	return v, nil
+}
