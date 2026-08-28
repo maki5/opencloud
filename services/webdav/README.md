@@ -10,7 +10,7 @@ Currently, the webdav service handles request for two functionalities, which are
 
 The webdav service provides various `GET` endpoints to get the thumbnails of a file in authenticated and unauthenticated contexts. It also provides thumbnails for spaces on different endpoints. 
 
-See the [thumbnail](https://github.com/opencloud-eu/opencloud/tree/main/services/thumbnails) service for more information about thumbnails.
+Generated thumbnails are cached by the webdav service itself. The cache backend defaults to `file`, storing entries under `$OC_BASE_DATA_PATH/thumbnails/files` (override with `WEBDAV_THUMBNAIL_CACHE_BACKEND` and `WEBDAV_THUMBNAIL_CACHE_DIR`). Use the `s3` backend when running multiple instances behind a load balancer so they share one cache.
 
 ### Search
 
@@ -20,4 +20,4 @@ See the [search](https://github.com/opencloud-eu/opencloud/tree/main/services/se
 
 ## Scalability
 
-The webdav service does not persist any data and does not cache any information. Therefore multiple instances of this service can be spawned in a bigger deployment like when using container orchestration with Kubernetes, without any extra configuration.
+The webdav service persists generated thumbnails to its thumbnail cache (file backend by default). When running multiple instances behind a load balancer, point `WEBDAV_THUMBNAIL_CACHE_BACKEND` at a shared `s3` bucket so all instances read and write the same cache; otherwise each instance keeps its own on-disk cache.
