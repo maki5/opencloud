@@ -38,6 +38,9 @@ type ThumbnailRequest struct {
 	PublicLinkToken string
 	// Indicates which image processor to use
 	Processor string
+	// Aspect reports whether the client wants the aspect ratio preserved (the
+	// legacy ownCloud "a" flag: a=1/absent -> preserve, a=0 -> fill the box).
+	Aspect bool
 	// The Identifier from the requested URL
 	Identifier string
 }
@@ -76,6 +79,7 @@ func ParseThumbnailRequest(r *http.Request) (*ThumbnailRequest, error) {
 		Width:           int32(width),
 		Height:          int32(height),
 		Processor:       q.Get("processor"),
+		Aspect:          q.Get("a") != "0",
 		PublicLinkToken: chi.URLParam(r, "token"),
 		Identifier:      id,
 	}, nil
