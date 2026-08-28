@@ -121,3 +121,21 @@ go build -tags enable_vips -o opencloud -o bin/opencloud ./cmd/opencloud
 When building a docker image using the Dockerfile in the top-level directory of OpenCloud, libvips support is enabled and the libvips shared libraries are included
 in the resulting docker image.
 
+
+
+## Push Endpoint (imagor-compatible)
+
+The webdav service POSTs a source file to this endpoint and receives the processed
+image back. The optional operation segment selects the resize/crop mode; its absence
+is the default center-crop fill.
+
+| Route | Description |
+|---|---|
+| `POST /unsafe/{width}x{height}/filters:format({format})` | Fill the exact width x height (center crop, may upscale) — the default |
+| `POST /unsafe/fit-in/{width}x{height}/filters:no_upscale()/filters:format({format})` | Scale to fit within width x height, preserving aspect ratio and never upscaling (letterboxed) |
+| `POST /unsafe/stretch/{width}x{height}/filters:format({format})` | Resize to the exact width x height without preserving aspect ratio (distorts) |
+
+The request body is a `multipart/form-data` upload with a single file field named
+`image`. Supported output formats are `jpg`, `png`, and `gif`. The legacy `/data`
+endpoint remains available for now; it will be removed once webdav no longer uses the
+pull-based flow.
