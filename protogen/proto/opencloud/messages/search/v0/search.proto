@@ -95,6 +95,7 @@ message Entity {
 	Photo photo = 19;
 	repeated string favorites = 20;
 	MotionPhoto motionPhoto = 21;
+	// 22 is the video facet on the sibling video-facet branch
 	LivePhoto livePhoto = 23;
 }
 
