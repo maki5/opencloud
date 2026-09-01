@@ -8,7 +8,7 @@ Currently, the webdav service handles request for two functionalities, which are
 
 ### Thumbnails
 
-The webdav service provides various `GET` endpoints to get the thumbnails of a file in authenticated and unauthenticated contexts. It also provides thumbnails for spaces on different endpoints. 
+The webdav service provides various `GET` endpoints to get the thumbnails of a file in authenticated and unauthenticated contexts. It also provides thumbnails for spaces on different endpoints.
 
 Generated thumbnails are cached by the webdav service itself. The cache backend defaults to `file`, storing entries under `$OC_BASE_DATA_PATH/thumbnails/files` (override with `WEBDAV_THUMBNAIL_CACHE_BACKEND` and `WEBDAV_THUMBNAIL_CACHE_DIR`). Use the `s3` backend when running multiple instances behind a load balancer so they share one cache.
 
@@ -51,13 +51,13 @@ The following are **legacy aliases** kept for compatibility. They map onto the p
 *   `thumbnail` is a legacy alias for `fill` (center-crop to the exact box, may upscale).
 *   `fit` is a legacy alias for `fit-in`.
 
-To apply one of those, a query parameter has to be added to the request, like `?processor=fit-in`. If no processor is given, the default behaviour applies which is `resize` for gifs and `thumbnail` (i.e. `fill`) for all others. When an explicit processor overrides a contradictory legacy `a`, the thumbnail response includes the header `X-OpenCloud-Thumbnail-Aspect-Ignored` so developers can tell their client to send a consistent request.
+To apply one of those, a query parameter has to be added to the request, like `?processor=fit-in`. If no processor is given, the default behaviour applies which is `resize` for gifs and `thumbnail` (i.e. `fill`) for all others. When an explicit processor overrides a contradictory legacy `a`, the thumbnail response includes the header `X-OpenCloud-Thumbnail-Aspect-Ignored` so developers can fix their client to send a consistent request.
 
 ### Search
 
-The webdav service provides access to the search functionality. It offers multiple `REPORT` endpoints for getting search results. 
+The webdav service provides access to the search functionality. It offers multiple `REPORT` endpoints for getting search results.
 
-See the [search](https://github.com/opencloud-eu/opencloud/tree/main/services/search) service for more details about search functionality. 
+See the [search](https://github.com/opencloud-eu/opencloud/tree/main/services/search) service for more details about search functionality.
 
 ## Scalability
 

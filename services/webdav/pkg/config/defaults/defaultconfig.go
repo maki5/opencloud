@@ -50,12 +50,9 @@ func DefaultConfig() *config.Config {
 		ThumbnailCacheBackend:     "file",
 		ThumbnailCacheDir:         path.Join(cored.BaseDataPath(), "thumbnails", "files"),
 		ThumbnailResolutions: []string{
-			"16x16", "32x32", "64x64", "128x128",
-			"320x320",
-			"500x280", "280x500", "1000x560", "560x1000",
-			"1024x1024",
-			"512x2048", "1080x1920", "1920x1080",
-			"2160x3840", "3840x2160", "4320x7680", "7680x4320",
+			"16x16", "32x32", "64x64", "128x128", "320x320", "1024x1024", // square
+			"280x500", "560x1000", "1080x1920", "2160x3840", "4320x7680", // portrait
+			"500x280", "1000x560", "1920x1080", "3840x2160", "7680x4320", // landscape
 		},
 	}
 }
