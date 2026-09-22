@@ -121,6 +121,7 @@ func (s *GuestauthService) processEvent(e events.Event) error {
 	defer span.End()
 
 	s.log.Debug().Interface("event", e).Msg("processing event")
+
 	switch ev := e.Event.(type) {
 	case events.ShareCreated:
 		return s.handleShareCreated(ctx, ev)
@@ -153,7 +154,6 @@ func (s *GuestauthService) handleShareRemoved(ctx context.Context, ev events.Sha
 	defer span.End()
 
 	s.log.Debug().Interface("event", ev).Msg("share removed event received")
-	// the cleanup of the guest token is implemented in a later step
 
 	return nil
 }
@@ -164,7 +164,6 @@ func (s *GuestauthService) handleShareExpired(ctx context.Context, ev events.Sha
 	defer span.End()
 
 	s.log.Debug().Interface("event", ev).Msg("share expired event received")
-	// the cleanup of the guest token is implemented in a later step
 
 	return nil
 }
