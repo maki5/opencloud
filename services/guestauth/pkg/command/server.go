@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/opencloud-eu/opencloud/pkg/config/configlog"
+	"github.com/opencloud-eu/opencloud/pkg/generators"
 	"github.com/opencloud-eu/opencloud/pkg/log"
 	"github.com/opencloud-eu/opencloud/pkg/runner"
 	"github.com/opencloud-eu/opencloud/pkg/version"
@@ -15,8 +16,16 @@ import (
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/metrics"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/server/debug"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/server/http"
-	svc "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service"
+	svcEvents "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/events"
+	"github.com/opencloud-eu/reva/v2/pkg/events"
+	"github.com/opencloud-eu/reva/v2/pkg/events/stream"
 )
+
+var _registeredEvents = []events.Unmarshaller{
+	events.ShareCreated{},
+	events.ShareRemoved{},
+	events.ShareExpired{},
+}
 
 // Server is the entrypoint for the server command.
 func Server(cfg *config.Config) *cobra.Command {
@@ -57,10 +66,27 @@ func Server(cfg *config.Config) *cobra.Command {
 			}
 
 			if !cfg.Events.Disabled {
-				guestAuth, err := svc.New(
-					svc.Logger(logger),
-					svc.Context(ctx),
-					svc.Config(cfg),
+				connName := generators.GenerateConnectionName(cfg.Service.Name, generators.NTypeBus)
+				evStream, err := stream.NatsFromConfig(connName, false, stream.NatsConfig{
+					Endpoint:             cfg.Events.Endpoint,
+					Cluster:              cfg.Events.Cluster,
+					EnableTLS:            cfg.Events.EnableTLS,
+					TLSInsecure:          cfg.Events.TLSInsecure,
+					TLSRootCACertificate: cfg.Events.TLSRootCACertificate,
+					AuthUsername:         cfg.Events.AuthUsername,
+					AuthPassword:         cfg.Events.AuthPassword,
+				})
+				if err != nil {
+					logger.Error().Err(err).Msg("Failed to initialize event stream")
+					return err
+				}
+
+				guestAuth, err := svcEvents.New(
+					evStream,
+					svcEvents.Logger(logger),
+					svcEvents.Context(ctx),
+					svcEvents.RegisteredEvents(_registeredEvents),
+					svcEvents.NumConsumers(cfg.NumConsumers),
 				)
 				if err != nil {
 					logger.Error().Err(err).Str("transport", "event").Msg("Failed to initialize server")

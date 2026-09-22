@@ -26,6 +26,7 @@ func DefaultConfig() *config.Config {
 		Service: config.Service{
 			Name: "guestauth",
 		},
+		NumConsumers: 1,
 		Events: config.Events{
 			Endpoint:  "127.0.0.1:9233",
 			Cluster:   "opencloud-cluster",

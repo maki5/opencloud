@@ -26,6 +26,8 @@ type Config struct {
 
 	ServiceAccount ServiceAccount `yaml:"service_account"`
 
+	NumConsumers int `yaml:"num_consumers" env:"GUESTAUTH_NUM_CONSUMERS" desc:"The amount of concurrent event consumers to start. Event consumers are used for processing events. Multiple consumers increase parallelisation, but will also increase CPU and memory demands." introductionVersion:"1.0.0"`
+
 	Context context.Context `yaml:"-"`
 }
 
