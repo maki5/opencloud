@@ -22,6 +22,7 @@ type Config struct {
 	GRPCClientTLS *shared.GRPCClientTLS `yaml:"grpc_client_tls"`
 
 	HTTP         HTTP          `yaml:"http"`
+	Storage      Storage       `yaml:"storage"`
 	TokenManager *TokenManager `yaml:"token_manager"`
 
 	ServiceAccount ServiceAccount `yaml:"service_account"`
@@ -65,6 +66,11 @@ type HTTP struct {
 	Root      string                `yaml:"root" env:"GUESTAUTH_HTTP_ROOT" desc:"Subdirectory that serves as the root for this HTTP service." introductionVersion:"1.0.0"`
 	CORS      CORS                  `yaml:"cors"`
 	TLS       shared.HTTPServiceTLS `yaml:"tls"`
+}
+
+// Storage defines the configuration for the token storage.
+type Storage struct {
+	RootDirectory string `yaml:"root_directory" env:"GUESTAUTH_TOKENS_STORAGE_ROOT" desc:"The directory where the guest share tokens are stored. If not defined, the root directory derives from $OC_BASE_DATA_PATH/guestauth." introductionVersion:"1.0.0"`
 }
 
 // TokenManager is the config for using the reva token manager

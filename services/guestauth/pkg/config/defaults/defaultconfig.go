@@ -1,6 +1,9 @@
 package defaults
 
 import (
+	"path"
+
+	"github.com/opencloud-eu/opencloud/pkg/config/defaults"
 	"github.com/opencloud-eu/opencloud/pkg/shared"
 	"github.com/opencloud-eu/opencloud/pkg/structs"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/config"
@@ -43,6 +46,9 @@ func DefaultConfig() *config.Config {
 				AllowedHeaders:   []string{"Authorization", "Origin", "Content-Type", "Accept", "X-Requested-With", "X-Request-Id", "Ocs-Apirequest"},
 				AllowCredentials: true,
 			},
+		},
+		Storage: config.Storage{
+			RootDirectory: path.Join(defaults.BaseDataPath(), "guestauth"),
 		},
 	}
 }
