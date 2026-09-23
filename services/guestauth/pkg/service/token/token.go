@@ -31,7 +31,7 @@ func (s *TokenService) Generate(shareID string) (string, error) {
 
 	return strings.Join([]string{
 		tokenVersion,
-		hash(shareID),
+		s.Hash(shareID),
 		base64.RawURLEncoding.EncodeToString(secretBytes),
 	}, "."), nil
 }
@@ -42,14 +42,23 @@ func (s *TokenService) Verify(tokenString string, storedSecretHash string) error
 		return ErrInvalidToken
 	}
 
-	if hash(parts[2]) != storedSecretHash {
+	if s.Hash(parts[2]) != storedSecretHash {
 		return ErrInvalidToken
 	}
 
 	return nil
 }
 
-func hash(s string) string {
-	h := sha256.Sum256([]byte(s))
+func (s *TokenService) ShareIDHash(tokenString string) (string, error) {
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != tokenParts || parts[0] != tokenVersion || parts[1] == "" || parts[2] == "" {
+		return "", ErrInvalidToken
+	}
+
+	return parts[1], nil
+}
+
+func (s *TokenService) Hash(str string) string {
+	h := sha256.Sum256([]byte(str))
 	return base64.RawURLEncoding.EncodeToString(h[:])
 }

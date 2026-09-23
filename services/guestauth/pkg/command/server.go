@@ -17,6 +17,9 @@ import (
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/server/debug"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/server/http"
 	svcEvents "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/events"
+	svcHttp "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/http"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/storage"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/token"
 	"github.com/opencloud-eu/reva/v2/pkg/events"
 	"github.com/opencloud-eu/reva/v2/pkg/events/stream"
 )
@@ -45,11 +48,20 @@ func Server(cfg *config.Config) *cobra.Command {
 			mtrcs := metrics.New()
 			mtrcs.BuildInfo.WithLabelValues(version.GetString()).Set(1)
 
+			tokenSvc := token.NewTokenService()
+			store := storage.NewFileStorage(cfg.Storage.RootDirectory)
+			redeemSvc, err := svcHttp.NewService(tokenSvc, store)
+			if err != nil {
+				logger.Error().Err(err).Msg("Failed to initialize http service")
+				return err
+			}
+
 			if !cfg.HTTP.Disabled {
 				server, err := http.Server(
 					http.Logger(logger),
 					http.Context(ctx),
 					http.Config(cfg),
+					http.Service(redeemSvc),
 				)
 				if err != nil {
 					logger.Info().

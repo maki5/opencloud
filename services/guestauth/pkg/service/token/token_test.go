@@ -19,7 +19,7 @@ func TestGenerate(t *testing.T) {
 	parts := strings.Split(tok, ".")
 	require.Len(t, parts, tokenParts)
 	assert.Equal(t, tokenVersion, parts[0])
-	assert.Equal(t, hash(testShareID), parts[1])
+	assert.Equal(t, svc.Hash(testShareID), parts[1])
 	assert.NotEmpty(t, parts[2])
 }
 
@@ -31,8 +31,8 @@ func TestGenerateDeterminism(t *testing.T) {
 	tok2, err := svc.Generate(testShareID)
 	require.NoError(t, err)
 
-	assert.Equal(t, hash(testShareID), strings.Split(tok1, ".")[1])
-	assert.Equal(t, hash(testShareID), strings.Split(tok2, ".")[1])
+	assert.Equal(t, svc.Hash(testShareID), strings.Split(tok1, ".")[1])
+	assert.Equal(t, svc.Hash(testShareID), strings.Split(tok2, ".")[1])
 	assert.NotEqual(t, tok1, tok2)
 
 	other, err := svc.Generate("9f9f9f9-9f9f-9f9f-9f9f-9f9f9f9f9f9f")
@@ -48,7 +48,7 @@ func TestVerify(t *testing.T) {
 
 	hashPart := strings.Split(tok, ".")[1]
 	secretPart := strings.Split(tok, ".")[2]
-	storedSecretHash := hash(secretPart)
+	storedSecretHash := svc.Hash(secretPart)
 
 	tests := []struct {
 		name             string
@@ -70,7 +70,7 @@ func TestVerify(t *testing.T) {
 		{
 			name:             "wrong stored secret",
 			token:            tok,
-			storedSecretHash: hash("other-secret"),
+			storedSecretHash: svc.Hash("other-secret"),
 			expectError:      true,
 		},
 		{

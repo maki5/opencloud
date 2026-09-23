@@ -16,6 +16,7 @@ type Options struct {
 	Logger  log.Logger
 	Context context.Context
 	Config  *config.Config
+	Service RedeemService
 	Flags   []pflag.Flag
 }
 
@@ -48,6 +49,13 @@ func Context(val context.Context) Option {
 func Config(val *config.Config) Option {
 	return func(o *Options) {
 		o.Config = val
+	}
+}
+
+// Service provides a function to set the service option.
+func Service(val RedeemService) Option {
+	return func(o *Options) {
+		o.Service = val
 	}
 }
 
