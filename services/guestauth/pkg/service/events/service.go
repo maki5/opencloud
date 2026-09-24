@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/opencloud-eu/opencloud/pkg/log"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/guestauth"
 	"github.com/opencloud-eu/reva/v2/pkg/events"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -21,11 +22,13 @@ var (
 	_numConsumersDefault = 1
 )
 
-// GuestauthService consumes events for the guestauth service
-type GuestauthService struct {
+// EventConsumer consumes guest share events.
+type EventConsumer struct {
 	ctx    context.Context
 	log    log.Logger
 	stream events.Stream
+
+	guestAuth *guestauth.GuestAuthService
 
 	numConsumers int
 
@@ -35,8 +38,8 @@ type GuestauthService struct {
 	stopped *atomic.Bool
 }
 
-// New creates a new GuestauthService
-func New(stream events.Stream, opts ...Option) (*GuestauthService, error) {
+// NewEventConsumer creates a new event consumer.
+func NewEventConsumer(stream events.Stream, opts ...Option) (*EventConsumer, error) {
 	o := &Options{
 		NumConsumers: _numConsumersDefault,
 	}
@@ -44,10 +47,11 @@ func New(stream events.Stream, opts ...Option) (*GuestauthService, error) {
 		opt(o)
 	}
 
-	s := &GuestauthService{
+	s := &EventConsumer{
 		ctx:          o.Context,
 		log:          o.Logger,
 		stream:       stream,
+		guestAuth:    o.GuestAuthService,
 		events:       o.RegisteredEvents,
 		numConsumers: o.NumConsumers,
 		stopCh:       make(chan struct{}, 1),
@@ -58,7 +62,7 @@ func New(stream events.Stream, opts ...Option) (*GuestauthService, error) {
 }
 
 // Run to fulfil Runner interface
-func (s *GuestauthService) Run() error {
+func (s *EventConsumer) Run() error {
 	ch, err := events.Consume(s.stream, "guestauth", s.events...)
 	if err != nil {
 		return err
@@ -108,14 +112,14 @@ func (s *GuestauthService) Run() error {
 
 // Close will make the service to stop processing, so the `Run`
 // method can finish.
-func (s *GuestauthService) Close() {
+func (s *EventConsumer) Close() {
 	if s.stopped.CompareAndSwap(false, true) {
 		close(s.stopCh)
 	}
 }
 
 // processEvent dispatches an event to the matching handler.
-func (s *GuestauthService) processEvent(e events.Event) error {
+func (s *EventConsumer) processEvent(e events.Event) error {
 	ctx := e.GetTraceContext(s.ctx)
 	ctx, span := tracer.Start(ctx, "processEvent")
 	defer span.End()
@@ -134,36 +138,6 @@ func (s *GuestauthService) processEvent(e events.Event) error {
 			Str("eventtype", e.Type).
 			Msg("unhandled event")
 	}
-
-	return nil
-}
-
-// handleShareCreated handles a share created event.
-func (s *GuestauthService) handleShareCreated(ctx context.Context, ev events.ShareCreated) error {
-	_, span := tracer.Start(ctx, "handleShareCreated")
-	defer span.End()
-
-	s.log.Debug().Interface("event", ev).Msg("share created event received")
-
-	return nil
-}
-
-// handleShareRemoved handles a share removed event.
-func (s *GuestauthService) handleShareRemoved(ctx context.Context, ev events.ShareRemoved) error {
-	_, span := tracer.Start(ctx, "handleShareRemoved")
-	defer span.End()
-
-	s.log.Debug().Interface("event", ev).Msg("share removed event received")
-
-	return nil
-}
-
-// handleShareExpired handles a share expired event.
-func (s *GuestauthService) handleShareExpired(ctx context.Context, ev events.ShareExpired) error {
-	_, span := tracer.Start(ctx, "handleShareExpired")
-	defer span.End()
-
-	s.log.Debug().Interface("event", ev).Msg("share expired event received")
 
 	return nil
 }

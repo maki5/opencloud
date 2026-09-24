@@ -17,48 +17,59 @@ const (
 
 var ErrInvalidToken = errors.New("invalid token")
 
+type Token struct {
+	ShareIDHash string
+	SecretHash  string
+	secret      string
+}
+
+func (t *Token) String() string {
+	return strings.Join([]string{tokenVersion, t.ShareIDHash, t.secret}, ".")
+}
+
 type TokenService struct{}
 
 func NewTokenService() *TokenService {
 	return &TokenService{}
 }
 
-func (s *TokenService) Generate(shareID string) (string, error) {
+func (s *TokenService) Generate(shareID string) (*Token, error) {
 	secretBytes := make([]byte, secretLength)
 	if _, err := rand.Read(secretBytes); err != nil {
-		return "", fmt.Errorf("could not generate random secret: %w", err)
+		return nil, fmt.Errorf("could not generate random secret: %w", err)
 	}
 
-	return strings.Join([]string{
-		tokenVersion,
-		s.Hash(shareID),
-		base64.RawURLEncoding.EncodeToString(secretBytes),
-	}, "."), nil
+	secret := base64.RawURLEncoding.EncodeToString(secretBytes)
+	return &Token{
+		ShareIDHash: Hash(shareID),
+		SecretHash:  Hash(secret),
+		secret:      secret,
+	}, nil
 }
 
-func (s *TokenService) Verify(tokenString string, storedSecretHash string) error {
-	parts := strings.Split(tokenString, ".")
+func (s *TokenService) Parse(encoded string) (*Token, error) {
+	parts := strings.Split(encoded, ".")
 	if len(parts) != tokenParts || parts[0] != tokenVersion || parts[1] == "" || parts[2] == "" {
-		return ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
 
-	if s.Hash(parts[2]) != storedSecretHash {
+	return &Token{
+		ShareIDHash: parts[1],
+		SecretHash:  Hash(parts[2]),
+		secret:      parts[2],
+	}, nil
+}
+
+func (s *TokenService) Verify(candidate Token, storedSecretHash string) error {
+	secretHash := Hash(candidate.secret)
+	if candidate.ShareIDHash == "" || candidate.secret == "" || candidate.SecretHash != secretHash || secretHash != storedSecretHash {
 		return ErrInvalidToken
 	}
 
 	return nil
 }
 
-func (s *TokenService) ShareIDHash(tokenString string) (string, error) {
-	parts := strings.Split(tokenString, ".")
-	if len(parts) != tokenParts || parts[0] != tokenVersion || parts[1] == "" || parts[2] == "" {
-		return "", ErrInvalidToken
-	}
-
-	return parts[1], nil
-}
-
-func (s *TokenService) Hash(str string) string {
-	h := sha256.Sum256([]byte(str))
+func Hash(value string) string {
+	h := sha256.Sum256([]byte(value))
 	return base64.RawURLEncoding.EncodeToString(h[:])
 }

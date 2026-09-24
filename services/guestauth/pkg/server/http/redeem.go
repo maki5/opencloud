@@ -6,20 +6,18 @@ import (
 	"net/http"
 
 	"github.com/opencloud-eu/opencloud/pkg/log"
-	svchttp "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/http"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/guestauth"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/storage"
 	token "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/token"
 )
 
-type RedeemService interface {
-	VerifyToken(tokenString string) (storage.Record, error)
-}
-
+// RedeemRequest is the request body for token redemption.
 type RedeemRequest struct {
 	Token string `json:"token"`
 }
 
-func RedeemHandler(log log.Logger, s RedeemService) func(w http.ResponseWriter, r *http.Request) {
+// RedeemHandler validates the token submitted to the redeem endpoint.
+func RedeemHandler(log log.Logger, s *guestauth.GuestAuthService) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req RedeemRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -31,7 +29,7 @@ func RedeemHandler(log log.Logger, s RedeemService) func(w http.ResponseWriter, 
 		_, err := s.VerifyToken(req.Token)
 		if err != nil {
 			switch {
-			case errors.Is(err, svchttp.ErrExpired) || errors.Is(err, svchttp.ErrAlreadyRedeemed):
+			case errors.Is(err, guestauth.ErrExpired) || errors.Is(err, guestauth.ErrAlreadyRedeemed):
 				log.Debug().Err(err).Msg("token expired or already redeemed")
 				w.WriteHeader(http.StatusGone)
 			case errors.Is(err, storage.ErrNotFound):

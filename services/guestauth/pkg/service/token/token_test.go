@@ -1,7 +1,6 @@
 package token
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,20 +9,17 @@ import (
 
 const testShareID = "e0123456-7890-abcd-ef01-234567890abc"
 
-func TestGenerate(t *testing.T) {
+func TestGenerateAndString(t *testing.T) {
 	svc := NewTokenService()
 
 	tok, err := svc.Generate(testShareID)
 	require.NoError(t, err)
-
-	parts := strings.Split(tok, ".")
-	require.Len(t, parts, tokenParts)
-	assert.Equal(t, tokenVersion, parts[0])
-	assert.Equal(t, svc.Hash(testShareID), parts[1])
-	assert.NotEmpty(t, parts[2])
+	assert.Equal(t, Hash(testShareID), tok.ShareIDHash)
+	assert.NotEmpty(t, tok.SecretHash)
+	assert.NotEmpty(t, tok.String())
 }
 
-func TestGenerateDeterminism(t *testing.T) {
+func TestGenerateRandomizesSecret(t *testing.T) {
 	svc := NewTokenService()
 
 	tok1, err := svc.Generate(testShareID)
@@ -31,88 +27,73 @@ func TestGenerateDeterminism(t *testing.T) {
 	tok2, err := svc.Generate(testShareID)
 	require.NoError(t, err)
 
-	assert.Equal(t, svc.Hash(testShareID), strings.Split(tok1, ".")[1])
-	assert.Equal(t, svc.Hash(testShareID), strings.Split(tok2, ".")[1])
-	assert.NotEqual(t, tok1, tok2)
+	assert.Equal(t, tok1.ShareIDHash, tok2.ShareIDHash)
+	assert.NotEqual(t, tok1.SecretHash, tok2.SecretHash)
+	assert.NotEqual(t, tok1.String(), tok2.String())
 
 	other, err := svc.Generate("9f9f9f9-9f9f-9f9f-9f9f-9f9f9f9f9f9f")
 	require.NoError(t, err)
-	assert.NotEqual(t, strings.Split(tok1, ".")[1], strings.Split(other, ".")[1])
+	assert.NotEqual(t, tok1.ShareIDHash, other.ShareIDHash)
+}
+
+func TestParse(t *testing.T) {
+	svc := NewTokenService()
+	original, err := svc.Generate(testShareID)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		encoded string
+		wantErr bool
+	}{
+		{name: "valid", encoded: original.String()},
+		{name: "wrong version", encoded: "v2." + original.ShareIDHash + "." + original.secret, wantErr: true},
+		{name: "missing version", encoded: original.ShareIDHash + "." + original.secret, wantErr: true},
+		{name: "too many parts", encoded: original.String() + ".extra", wantErr: true},
+		{name: "empty share hash", encoded: "v1.." + original.secret, wantErr: true},
+		{name: "empty secret", encoded: "v1." + original.ShareIDHash + ".", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := svc.Parse(tt.encoded)
+			if tt.wantErr {
+				assert.ErrorIs(t, err, ErrInvalidToken)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, original.ShareIDHash, parsed.ShareIDHash)
+			assert.Equal(t, original.SecretHash, parsed.SecretHash)
+			assert.Equal(t, original.String(), parsed.String())
+		})
+	}
 }
 
 func TestVerify(t *testing.T) {
 	svc := NewTokenService()
-
 	tok, err := svc.Generate(testShareID)
 	require.NoError(t, err)
 
-	hashPart := strings.Split(tok, ".")[1]
-	secretPart := strings.Split(tok, ".")[2]
-	storedSecretHash := svc.Hash(secretPart)
-
 	tests := []struct {
 		name             string
-		token            string
+		token            Token
 		storedSecretHash string
-		expectError      bool
+		wantErr          bool
 	}{
-		{
-			name:             "valid token",
-			token:            tok,
-			storedSecretHash: storedSecretHash,
-		},
-		{
-			name:             "tampered secret",
-			token:            "v1." + hashPart + ".tampered",
-			storedSecretHash: storedSecretHash,
-			expectError:      true,
-		},
-		{
-			name:             "wrong stored secret",
-			token:            tok,
-			storedSecretHash: svc.Hash("other-secret"),
-			expectError:      true,
-		},
-		{
-			name:             "wrong version",
-			token:            "v2." + hashPart + "." + secretPart,
-			storedSecretHash: storedSecretHash,
-			expectError:      true,
-		},
-		{
-			name:             "missing version",
-			token:            hashPart + "." + secretPart,
-			storedSecretHash: storedSecretHash,
-			expectError:      true,
-		},
-		{
-			name:             "too many parts",
-			token:            "v1." + hashPart + "." + secretPart + ".extra",
-			storedSecretHash: storedSecretHash,
-			expectError:      true,
-		},
-		{
-			name:             "empty hash",
-			token:            "v1.." + secretPart,
-			storedSecretHash: storedSecretHash,
-			expectError:      true,
-		},
-		{
-			name:             "empty secret",
-			token:            "v1." + hashPart + ".",
-			storedSecretHash: storedSecretHash,
-			expectError:      true,
-		},
+		{name: "valid", token: *tok, storedSecretHash: tok.SecretHash},
+		{name: "wrong stored secret", token: *tok, storedSecretHash: Hash("other-secret"), wantErr: true},
+		{name: "missing fields", token: Token{ShareIDHash: tok.ShareIDHash}, storedSecretHash: tok.SecretHash, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := svc.Verify(tt.token, tt.storedSecretHash)
-			if tt.expectError {
+			if tt.wantErr {
 				assert.ErrorIs(t, err, ErrInvalidToken)
-			} else {
-				assert.NoError(t, err)
+				return
 			}
+			assert.NoError(t, err)
 		})
 	}
 }

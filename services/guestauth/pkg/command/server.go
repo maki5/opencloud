@@ -17,7 +17,7 @@ import (
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/server/debug"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/server/http"
 	svcEvents "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/events"
-	svcHttp "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/http"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/guestauth"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/storage"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/token"
 	"github.com/opencloud-eu/reva/v2/pkg/events"
@@ -50,18 +50,14 @@ func Server(cfg *config.Config) *cobra.Command {
 
 			tokenSvc := token.NewTokenService()
 			store := storage.NewFileStorage(cfg.Storage.RootDirectory)
-			redeemSvc, err := svcHttp.NewService(tokenSvc, store)
-			if err != nil {
-				logger.Error().Err(err).Msg("Failed to initialize http service")
-				return err
-			}
+			guestAuth := guestauth.NewGuestAuthService(tokenSvc, store)
 
 			if !cfg.HTTP.Disabled {
 				server, err := http.Server(
 					http.Logger(logger),
 					http.Context(ctx),
 					http.Config(cfg),
-					http.Service(redeemSvc),
+					http.Service(guestAuth),
 				)
 				if err != nil {
 					logger.Info().
@@ -93,12 +89,13 @@ func Server(cfg *config.Config) *cobra.Command {
 					return err
 				}
 
-				guestAuth, err := svcEvents.New(
+				consumer, err := svcEvents.NewEventConsumer(
 					evStream,
 					svcEvents.Logger(logger),
 					svcEvents.Context(ctx),
 					svcEvents.RegisteredEvents(_registeredEvents),
 					svcEvents.NumConsumers(cfg.NumConsumers),
+					svcEvents.GuestAuthService(guestAuth),
 				)
 				if err != nil {
 					logger.Error().Err(err).Str("transport", "event").Msg("Failed to initialize server")
@@ -106,9 +103,9 @@ func Server(cfg *config.Config) *cobra.Command {
 				}
 
 				gr.Add(runner.New(cfg.Service.Name+".svc", func() error {
-					return guestAuth.Run()
+					return consumer.Run()
 				}, func() {
-					guestAuth.Close()
+					consumer.Close()
 				}))
 			} else {
 				logger.Info().Msg("event listening disabled, not starting event service")

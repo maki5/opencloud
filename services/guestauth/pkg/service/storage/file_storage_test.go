@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -16,8 +15,8 @@ func newRecord(shareID string) Record {
 
 	return Record{
 		ShareID:     shareID,
-		ShareIDHash: strings.Split(tok, ".")[1],
-		SecretHash:  svc.Hash(strings.Split(tok, ".")[2]),
+		ShareIDHash: tok.ShareIDHash,
+		SecretHash:  tok.SecretHash,
 		Expiry:      time.Date(2026, 12, 31, 23, 59, 59, 0, time.UTC),
 	}
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/opencloud-eu/opencloud/pkg/log"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/config"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/guestauth"
 	"github.com/spf13/pflag"
 )
 
@@ -16,7 +17,7 @@ type Options struct {
 	Logger  log.Logger
 	Context context.Context
 	Config  *config.Config
-	Service RedeemService
+	Service *guestauth.GuestAuthService
 	Flags   []pflag.Flag
 }
 
@@ -53,7 +54,7 @@ func Config(val *config.Config) Option {
 }
 
 // Service provides a function to set the service option.
-func Service(val RedeemService) Option {
+func Service(val *guestauth.GuestAuthService) Option {
 	return func(o *Options) {
 		o.Service = val
 	}

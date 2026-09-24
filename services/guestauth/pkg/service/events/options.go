@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/opencloud-eu/opencloud/pkg/log"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/guestauth"
 	"github.com/opencloud-eu/reva/v2/pkg/events"
 )
 
@@ -17,6 +18,7 @@ type Options struct {
 	Stream           events.Stream
 	RegisteredEvents []events.Unmarshaller
 	NumConsumers     int
+	GuestAuthService *guestauth.GuestAuthService
 }
 
 // Context configures a context for the guestauth service
@@ -51,5 +53,12 @@ func RegisteredEvents(e []events.Unmarshaller) Option {
 func NumConsumers(num int) Option {
 	return func(o *Options) {
 		o.NumConsumers = num
+	}
+}
+
+// GuestAuthService configures the guest auth domain service.
+func GuestAuthService(s *guestauth.GuestAuthService) Option {
+	return func(o *Options) {
+		o.GuestAuthService = s
 	}
 }
