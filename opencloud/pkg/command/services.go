@@ -24,6 +24,7 @@ import (
 	gateway "github.com/opencloud-eu/opencloud/services/gateway/pkg/command"
 	graph "github.com/opencloud-eu/opencloud/services/graph/pkg/command"
 	groups "github.com/opencloud-eu/opencloud/services/groups/pkg/command"
+	guestauth "github.com/opencloud-eu/opencloud/services/guestauth/pkg/command"
 	idm "github.com/opencloud-eu/opencloud/services/idm/pkg/command"
 	idp "github.com/opencloud-eu/opencloud/services/idp/pkg/command"
 	invitations "github.com/opencloud-eu/opencloud/services/invitations/pkg/command"
@@ -136,6 +137,11 @@ var serviceCommands = []register.Command{
 	func(cfg *config.Config) *cobra.Command {
 		return ServiceCommand(cfg, cfg.Groups.Service.Name, groups.GetCommands(cfg.Groups), func(c *config.Config) {
 			cfg.Groups.Commons = cfg.Commons
+		})
+	},
+	func(cfg *config.Config) *cobra.Command {
+		return ServiceCommand(cfg, cfg.GuestAuth.Service.Name, guestauth.GetCommands(cfg.GuestAuth), func(c *config.Config) {
+			cfg.GuestAuth.Commons = cfg.Commons
 		})
 	},
 	func(cfg *config.Config) *cobra.Command {

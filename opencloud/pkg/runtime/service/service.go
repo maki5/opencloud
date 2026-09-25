@@ -35,6 +35,7 @@ import (
 	gateway "github.com/opencloud-eu/opencloud/services/gateway/pkg/command"
 	graph "github.com/opencloud-eu/opencloud/services/graph/pkg/command"
 	groups "github.com/opencloud-eu/opencloud/services/groups/pkg/command"
+	guestauth "github.com/opencloud-eu/opencloud/services/guestauth/pkg/command"
 	idm "github.com/opencloud-eu/opencloud/services/idm/pkg/command"
 	idp "github.com/opencloud-eu/opencloud/services/idp/pkg/command"
 	invitations "github.com/opencloud-eu/opencloud/services/invitations/pkg/command"
@@ -197,6 +198,11 @@ func NewService(ctx context.Context, options ...Option) (*Service, error) {
 		cfg.Groups.Context = ctx
 		cfg.Groups.Commons = cfg.Commons
 		return groups.Execute(cfg.Groups)
+	})
+	reg(3, opts.Config.GuestAuth.Service.Name, func(ctx context.Context, cfg *occfg.Config) error {
+		cfg.GuestAuth.Context = ctx
+		cfg.GuestAuth.Commons = cfg.Commons
+		return guestauth.Execute(cfg.GuestAuth)
 	})
 	reg(3, opts.Config.IDM.Service.Name, func(ctx context.Context, cfg *occfg.Config) error {
 		cfg.IDM.Context = ctx

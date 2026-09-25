@@ -32,6 +32,7 @@ type OpenCloudConfig struct {
 	AuthBearer        AuthbearerService     `yaml:"auth_bearer"`
 	Users             UsersAndGroupsService `yaml:"users"`
 	Groups            UsersAndGroupsService `yaml:"groups"`
+	GuestAuth         GuestAuth             `yaml:"guestauth"`
 	Ocm               OcmService            `yaml:"ocm"`
 	Thumbnails        ThumbnailService      `yaml:"thumbnails"`
 	Search            Search                `yaml:"search"`
@@ -51,6 +52,12 @@ type OpenCloudConfig struct {
 // Activitylog is the configuration for the activitylog service
 type Activitylog struct {
 	ServiceAccount ServiceAccount `yaml:"service_account"`
+}
+
+// GuestAuth is the configuration for the guestauth service
+type GuestAuth struct {
+	ServiceAccount ServiceAccount `yaml:"service_account"`
+	TokenManager   TokenManager   `yaml:"token_manager"`
 }
 
 // App is the configuration for the collaboration service
