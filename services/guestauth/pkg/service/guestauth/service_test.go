@@ -1,16 +1,49 @@
 package guestauth
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	gateway "github.com/cs3org/go-cs3apis/cs3/gateway/v1beta1"
+	rpc "github.com/cs3org/go-cs3apis/cs3/rpc/v1beta1"
+	collaboration "github.com/cs3org/go-cs3apis/cs3/sharing/collaboration/v1beta1"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/config"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/jwt"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/storage"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/token"
+	"github.com/opencloud-eu/reva/v2/pkg/rgrpc/todo/pool"
+	"github.com/opencloud-eu/reva/v2/pkg/utils"
+	cs3mocks "github.com/opencloud-eu/reva/v2/tests/cs3mocks/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 const testShareID = "e0123456-7890-abcd-ef01-234567890abc"
+
+type gatewayTestSelector struct {
+	client gateway.GatewayAPIClient
+}
+
+func (s gatewayTestSelector) Next(...pool.Option) (gateway.GatewayAPIClient, error) {
+	return s.client, nil
+}
+
+func newGatewayTestSelector(client gateway.GatewayAPIClient) pool.Selectable[gateway.GatewayAPIClient] {
+	return gatewayTestSelector{client: client}
+}
+
+func newGatewayMock(resp *collaboration.GetShareResponse) *cs3mocks.GatewayAPIClient {
+	gwc := &cs3mocks.GatewayAPIClient{}
+	gwc.On("Authenticate", mock.Anything, mock.Anything).
+		Return(&gateway.AuthenticateResponse{
+			Status: &rpc.Status{Code: rpc.Code_CODE_OK},
+			Token:  "token",
+		}, nil)
+	gwc.On("GetShare", mock.Anything, mock.Anything).Return(resp, nil)
+	return gwc
+}
 
 func newToken(t *testing.T) (string, storage.Record) {
 	ts := token.NewTokenService()
@@ -31,15 +64,25 @@ func newStorage(t *testing.T) storage.Storage {
 	return storage.NewFileStorage(t.TempDir())
 }
 
-func TestVerifyTokenValid(t *testing.T) {
-	store := newStorage(t)
-	s := NewGuestAuthService(token.NewTokenService(), store)
-	tok, rec := newToken(t)
-	require.NoError(t, store.Add(rec))
+func newShareService(t *testing.T, gwc *cs3mocks.GatewayAPIClient) *GuestAuthService {
+	t.Helper()
+	return NewGuestAuthService(
+		token.NewTokenService(),
+		newStorage(t),
+		GatewaySelector(newGatewayTestSelector(gwc)),
+		ServiceAccount(config.ServiceAccount{ServiceAccountID: "sa-id", ServiceAccountSecret: "sa-secret"}),
+	)
+}
 
-	got, err := s.VerifyToken(tok)
-	require.NoError(t, err)
-	assert.Equal(t, rec, got)
+func newRedeemService(t *testing.T, store storage.Storage, gwc *cs3mocks.GatewayAPIClient) *GuestAuthService {
+	t.Helper()
+	return NewGuestAuthService(
+		token.NewTokenService(),
+		store,
+		GatewaySelector(newGatewayTestSelector(gwc)),
+		ServiceAccount(config.ServiceAccount{ServiceAccountID: "sa-id", ServiceAccountSecret: "sa-secret"}),
+		JWT(jwt.NewJwtService("test-secret", time.Hour)),
+	)
 }
 
 func TestCreateTokenPersistsRecord(t *testing.T) {
@@ -58,24 +101,116 @@ func TestCreateTokenPersistsRecord(t *testing.T) {
 	assert.False(t, rec.Redeemed)
 }
 
-func TestVerifyTokenExpired(t *testing.T) {
-	store := newStorage(t)
-	s := NewGuestAuthService(token.NewTokenService(), store)
-	tok, rec := newToken(t)
-	rec.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	require.NoError(t, store.Add(rec))
+func TestVerifyToken(t *testing.T) {
+	tests := []struct {
+		name     string
+		expired  bool
+		redeemed bool
+		wantErr  error
+	}{
+		{name: "valid"},
+		{name: "expired", expired: true, wantErr: ErrExpired},
+		{name: "already redeemed", redeemed: true, wantErr: ErrAlreadyRedeemed},
+	}
 
-	_, err := s.VerifyToken(tok)
-	assert.ErrorIs(t, err, ErrExpired)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newStorage(t)
+			s := NewGuestAuthService(token.NewTokenService(), store)
+			tok, rec := newToken(t)
+			if tt.expired {
+				rec.Expiry = time.Now().Add(-time.Hour)
+			}
+			require.NoError(t, store.Add(rec))
+			if tt.redeemed {
+				require.NoError(t, store.Redeem(rec.ShareIDHash))
+			}
+
+			got, err := s.verifyToken(tok)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, rec, got)
+		})
+	}
 }
 
-func TestVerifyTokenAlreadyRedeemed(t *testing.T) {
+func TestValidateShare(t *testing.T) {
+	share := &collaboration.Share{Id: &collaboration.ShareId{OpaqueId: testShareID}}
+	notExpiredShare := &collaboration.Share{
+		Id:         &collaboration.ShareId{OpaqueId: testShareID},
+		Expiration: utils.TimeToTS(time.Now().Add(time.Hour)),
+	}
+	expiredShare := &collaboration.Share{
+		Id:         &collaboration.ShareId{OpaqueId: testShareID},
+		Expiration: utils.TimeToTS(time.Now().Add(-time.Hour)),
+	}
+
+	tests := []struct {
+		name     string
+		response *collaboration.GetShareResponse
+		wantErr  error
+	}{
+		{
+			name:     "valid",
+			response: &collaboration.GetShareResponse{Status: &rpc.Status{Code: rpc.Code_CODE_OK}, Share: share},
+		},
+		{
+			name:     "not expired",
+			response: &collaboration.GetShareResponse{Status: &rpc.Status{Code: rpc.Code_CODE_OK}, Share: notExpiredShare},
+		},
+		{
+			name:     "expired",
+			response: &collaboration.GetShareResponse{Status: &rpc.Status{Code: rpc.Code_CODE_OK}, Share: expiredShare},
+			wantErr:  ErrShareExpired,
+		},
+		{
+			name:     "not found",
+			response: &collaboration.GetShareResponse{Status: &rpc.Status{Code: rpc.Code_CODE_NOT_FOUND}},
+			wantErr:  ErrShareNotFound,
+		},
+		{
+			name:     "nil share",
+			response: &collaboration.GetShareResponse{Status: &rpc.Status{Code: rpc.Code_CODE_OK}},
+			wantErr:  ErrShareNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newShareService(t, newGatewayMock(tt.response))
+
+			got, err := s.validateShare(context.Background(), testShareID)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.response.GetShare(), got)
+		})
+	}
+}
+
+func TestRedeem(t *testing.T) {
 	store := newStorage(t)
-	s := NewGuestAuthService(token.NewTokenService(), store)
 	tok, rec := newToken(t)
 	require.NoError(t, store.Add(rec))
-	require.NoError(t, store.Redeem(rec.ShareIDHash))
 
-	_, err := s.VerifyToken(tok)
-	assert.ErrorIs(t, err, ErrAlreadyRedeemed)
+	share := &collaboration.Share{Id: &collaboration.ShareId{OpaqueId: testShareID}}
+	s := newRedeemService(t, store, newGatewayMock(&collaboration.GetShareResponse{
+		Status: &rpc.Status{Code: rpc.Code_CODE_OK},
+		Share:  share,
+	}))
+
+	sessionToken, err := s.Redeem(context.Background(), tok)
+	require.NoError(t, err)
+	require.NotEmpty(t, sessionToken)
+
+	got, err := store.Get(rec.ShareIDHash)
+	require.NoError(t, err)
+	assert.True(t, got.Redeemed)
 }

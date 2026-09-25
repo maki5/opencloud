@@ -56,7 +56,7 @@ func Server(opts ...Option) (ohttp.Service, error) {
 	mux.Use(middlewares...)
 
 	mux.Route(options.Config.HTTP.Root, func(r chi.Router) {
-		r.Post("/v1beta1/guestInvitations/redeem", RedeemHandler(options.Logger, options.Service))
+		r.Post("/v1beta1/guestInvitations/redeem", RedeemHandler(options.Logger, options.Service, options.Config))
 	})
 
 	err = micro.RegisterHandler(newService.Server(), mux)

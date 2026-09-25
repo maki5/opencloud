@@ -2,6 +2,7 @@ package defaults
 
 import (
 	"path"
+	"time"
 
 	"github.com/opencloud-eu/opencloud/pkg/config/defaults"
 	"github.com/opencloud-eu/opencloud/pkg/shared"
@@ -50,6 +51,11 @@ func DefaultConfig() *config.Config {
 		Storage: config.Storage{
 			RootDirectory: path.Join(defaults.BaseDataPath(), "guestauth"),
 		},
+		JWT: config.JWT{
+			CookieName:   "oc_guest_session",
+			CookieSecure: true,
+			TTL:          24 * time.Hour,
+		},
 	}
 }
 
@@ -62,11 +68,7 @@ func EnsureDefaults(cfg *config.Config) {
 		cfg.GRPCClientTLS = structs.CopyOrZeroValue(cfg.Commons.GRPCClientTLS)
 	}
 
-	if cfg.TokenManager == nil && cfg.Commons != nil && cfg.Commons.TokenManager != nil {
-		cfg.TokenManager = &config.TokenManager{
-			JWTSecret: cfg.Commons.TokenManager.JWTSecret,
-		}
-	} else if cfg.TokenManager == nil {
+	if cfg.TokenManager == nil {
 		cfg.TokenManager = &config.TokenManager{}
 	}
 

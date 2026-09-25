@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"time"
 
 	"github.com/opencloud-eu/opencloud/pkg/shared"
 )
@@ -24,6 +25,7 @@ type Config struct {
 	HTTP         HTTP          `yaml:"http"`
 	Storage      Storage       `yaml:"storage"`
 	TokenManager *TokenManager `yaml:"token_manager"`
+	JWT          JWT           `yaml:"jwt"`
 
 	ServiceAccount ServiceAccount `yaml:"service_account"`
 
@@ -75,5 +77,12 @@ type Storage struct {
 
 // TokenManager is the config for using the reva token manager
 type TokenManager struct {
-	JWTSecret string `yaml:"jwt_secret" env:"OC_JWT_SECRET;GUESTAUTH_JWT_SECRET" desc:"The secret to mint and validate jwt tokens." introductionVersion:"1.0.0"`
+	JWTSecret string `yaml:"jwt_secret" env:"GUESTAUTH_JWT_SECRET" desc:"The secret to mint and validate jwt tokens." introductionVersion:"1.0.0"`
+}
+
+// JWT defines the configuration for guest session tokens.
+type JWT struct {
+	CookieName   string        `yaml:"cookie_name" env:"GUESTAUTH_JWT_COOKIE_NAME" desc:"The name of the session cookie set when a guest token is redeemed." introductionVersion:"1.0.0"`
+	CookieSecure bool          `yaml:"cookie_secure" env:"GUESTAUTH_JWT_COOKIE_SECURE" desc:"Whether the session cookie should be flagged as secure (only sent over HTTPS)." introductionVersion:"1.0.0"`
+	TTL          time.Duration `yaml:"ttl" env:"GUESTAUTH_JWT_TTL" desc:"The lifetime of a redeemed guest session token." introductionVersion:"1.0.0"`
 }

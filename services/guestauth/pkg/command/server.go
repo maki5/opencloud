@@ -9,7 +9,9 @@ import (
 	"github.com/opencloud-eu/opencloud/pkg/config/configlog"
 	"github.com/opencloud-eu/opencloud/pkg/generators"
 	"github.com/opencloud-eu/opencloud/pkg/log"
+	"github.com/opencloud-eu/opencloud/pkg/registry"
 	"github.com/opencloud-eu/opencloud/pkg/runner"
+	"github.com/opencloud-eu/opencloud/pkg/tracing"
 	"github.com/opencloud-eu/opencloud/pkg/version"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/config"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/config/parser"
@@ -18,10 +20,12 @@ import (
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/server/http"
 	svcEvents "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/events"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/guestauth"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/jwt"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/storage"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/token"
 	"github.com/opencloud-eu/reva/v2/pkg/events"
 	"github.com/opencloud-eu/reva/v2/pkg/events/stream"
+	"github.com/opencloud-eu/reva/v2/pkg/rgrpc/todo/pool"
 )
 
 var _registeredEvents = []events.Unmarshaller{
@@ -41,6 +45,26 @@ func Server(cfg *config.Config) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger := log.Configure(cfg.Service.Name, cfg.Commons, cfg.LogLevel)
 
+			tracerProvider, err := tracing.GetTraceProvider(cmd.Context(), cfg.Commons.TracesExporter, cfg.Service.Name)
+			if err != nil {
+				return err
+			}
+
+			tm, err := pool.StringToTLSMode(cfg.GRPCClientTLS.Mode)
+			if err != nil {
+				return err
+			}
+			gatewaySelector, err := pool.GatewaySelector(
+				cfg.RevaGateway,
+				pool.WithTLSCACert(cfg.GRPCClientTLS.CACert),
+				pool.WithTLSMode(tm),
+				pool.WithRegistry(registry.GetRegistry()),
+				pool.WithTracerProvider(tracerProvider),
+			)
+			if err != nil {
+				return fmt.Errorf("could not get reva client selector: %s", err)
+			}
+
 			gr := runner.NewGroup()
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
@@ -50,7 +74,13 @@ func Server(cfg *config.Config) *cobra.Command {
 
 			tokenSvc := token.NewTokenService()
 			store := storage.NewFileStorage(cfg.Storage.RootDirectory)
-			guestAuth := guestauth.NewGuestAuthService(tokenSvc, store)
+			jwtService := jwt.NewJwtService(cfg.TokenManager.JWTSecret, cfg.JWT.TTL)
+			
+			guestAuth := guestauth.NewGuestAuthService(tokenSvc, store,
+				guestauth.GatewaySelector(gatewaySelector),
+				guestauth.ServiceAccount(cfg.ServiceAccount),
+				guestauth.JWT(jwtService),
+			)
 
 			if !cfg.HTTP.Disabled {
 				server, err := http.Server(
