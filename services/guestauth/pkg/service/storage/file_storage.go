@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/google/renameio/v2"
 )
 
 func NewFileStorage(root string) *FileStorage {
@@ -22,6 +24,7 @@ type FileStorage struct {
 }
 
 const dirPerm = 0700
+const filePerm = 0600
 
 func (s *FileStorage) Add(rec Record) error {
 	s.mu.Lock()
@@ -79,34 +82,7 @@ func (s *FileStorage) add(rec Record) error {
 		return fmt.Errorf("could not create directory %s: %w", dir, err)
 	}
 
-	// Create temporary file is needed to ensure that if something is wrong during write we will not have
-	// a corupted file on disk which can be later treated as a valid file which contains a token record.
-	f, err := os.CreateTemp(dir, "tmpguestauth")
-	if err != nil {
-		return fmt.Errorf("could not create temporary file for %s: %w", rec.ShareIDHash, err)
-	}
-	defer f.Close()
-
-	if _, writeErr := f.Write(data); writeErr != nil {
-		if remErr := os.Remove(f.Name()); remErr != nil {
-			return fmt.Errorf("could not cleanup temporary file for %s: %w", rec.ShareIDHash, remErr)
-		}
-		return fmt.Errorf("could not write temporary file for %s: %w", rec.ShareIDHash, writeErr)
-	}
-
-	// just in case there is a simultan write of the identic file(record)
-	if synErr := f.Sync(); synErr != nil {
-		return fmt.Errorf("could not sync temporary file for %s: %w", rec.ShareIDHash, synErr)
-	}
-
-	if renErr := os.Rename(f.Name(), p); renErr != nil {
-		if remErr := os.Remove(f.Name()); remErr != nil {
-			return fmt.Errorf("rename failed and could not cleanup temporary file for %s: %w", rec.ShareIDHash, remErr)
-		}
-		return fmt.Errorf("could not rename temporary file to %s: %w", p, renErr)
-	}
-
-	return nil
+	return renameio.WriteFile(p, data, filePerm)
 }
 
 func (s *FileStorage) get(shareIDHash string) (Record, error) {
