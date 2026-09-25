@@ -284,6 +284,11 @@ func DefaultPolicies() []config.Policy {
 					Service:  "eu.opencloud.web.invitations",
 				},
 				{
+					Endpoint:    "/graph/v1beta1/guestInvitations",
+					Service:     "eu.opencloud.web.guestauth",
+					Unprotected: true,
+				},
+				{
 					Endpoint: "/graph/",
 					Service:  "eu.opencloud.web.graph",
 				},
