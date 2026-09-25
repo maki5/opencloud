@@ -11,6 +11,7 @@ import (
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/config"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/jwt"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/storage"
+	storagemocks "github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/storage/mocks"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/token"
 	"github.com/opencloud-eu/reva/v2/pkg/rgrpc/todo/pool"
 	"github.com/opencloud-eu/reva/v2/pkg/utils"
@@ -60,15 +61,11 @@ func newToken(t *testing.T) (string, storage.Record) {
 	return tok.String(), rec
 }
 
-func newStorage(t *testing.T) storage.Storage {
-	return storage.NewFileStorage(t.TempDir())
-}
-
 func newShareService(t *testing.T, gwc *cs3mocks.GatewayAPIClient) *GuestAuthService {
 	t.Helper()
 	return NewGuestAuthService(
 		token.NewTokenService(),
-		newStorage(t),
+		storagemocks.NewStorage(t),
 		GatewaySelector(newGatewayTestSelector(gwc)),
 		ServiceAccount(config.ServiceAccount{ServiceAccountID: "sa-id", ServiceAccountSecret: "sa-secret"}),
 	)
@@ -86,19 +83,37 @@ func newRedeemService(t *testing.T, store storage.Storage, gwc *cs3mocks.Gateway
 }
 
 func TestCreateTokenPersistsRecord(t *testing.T) {
-	store := newStorage(t)
-	s := NewGuestAuthService(token.NewTokenService(), store)
+	store := storagemocks.NewStorage(t)
+	expiry := time.Date(2027, 1, 2, 3, 4, 5, 0, time.UTC)
+	gwc := newGatewayMock(&collaboration.GetShareResponse{
+		Status: &rpc.Status{Code: rpc.Code_CODE_OK},
+		Share: &collaboration.Share{
+			Id:         &collaboration.ShareId{OpaqueId: testShareID},
+			Expiration: utils.TimeToTS(expiry),
+		},
+	})
 
-	tok, err := s.CreateToken(testShareID)
+	var added storage.Record
+	store.On("Add", mock.Anything).Run(func(args mock.Arguments) {
+		added = args.Get(0).(storage.Record)
+	}).Return(nil)
+
+	s := NewGuestAuthService(
+		token.NewTokenService(),
+		store,
+		GatewaySelector(newGatewayTestSelector(gwc)),
+		ServiceAccount(config.ServiceAccount{ServiceAccountID: "sa-id", ServiceAccountSecret: "sa-secret"}),
+	)
+
+	tok, err := s.CreateToken(context.Background(), testShareID)
 	require.NoError(t, err)
 
-	rec, err := store.Get(tok.ShareIDHash)
-	require.NoError(t, err)
-	assert.Equal(t, testShareID, rec.ShareID)
-	assert.Equal(t, tok.ShareIDHash, rec.ShareIDHash)
-	assert.Equal(t, tok.SecretHash, rec.SecretHash)
-	assert.True(t, rec.Expiry.IsZero())
-	assert.False(t, rec.Redeemed)
+	store.AssertCalled(t, "Add", mock.Anything)
+	assert.Equal(t, testShareID, added.ShareID)
+	assert.Equal(t, tok.ShareIDHash, added.ShareIDHash)
+	assert.Equal(t, tok.SecretHash, added.SecretHash)
+	assert.True(t, expiry.Equal(added.Expiry))
+	assert.False(t, added.Redeemed)
 }
 
 func TestVerifyToken(t *testing.T) {
@@ -115,16 +130,16 @@ func TestVerifyToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := newStorage(t)
+			store := storagemocks.NewStorage(t)
 			s := NewGuestAuthService(token.NewTokenService(), store)
 			tok, rec := newToken(t)
 			if tt.expired {
 				rec.Expiry = time.Now().Add(-time.Hour)
 			}
-			require.NoError(t, store.Add(rec))
 			if tt.redeemed {
-				require.NoError(t, store.Redeem(rec.ShareIDHash))
+				rec.Redeemed = true
 			}
+			store.On("Get", rec.ShareIDHash).Return(rec, nil)
 
 			got, err := s.verifyToken(tok)
 			if tt.wantErr != nil {
@@ -196,9 +211,10 @@ func TestValidateShare(t *testing.T) {
 }
 
 func TestRedeem(t *testing.T) {
-	store := newStorage(t)
+	store := storagemocks.NewStorage(t)
 	tok, rec := newToken(t)
-	require.NoError(t, store.Add(rec))
+	store.On("Get", rec.ShareIDHash).Return(rec, nil)
+	store.On("Redeem", rec.ShareIDHash).Return(nil)
 
 	share := &collaboration.Share{Id: &collaboration.ShareId{OpaqueId: testShareID}}
 	s := newRedeemService(t, store, newGatewayMock(&collaboration.GetShareResponse{
@@ -210,7 +226,21 @@ func TestRedeem(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, sessionToken)
 
-	got, err := store.Get(rec.ShareIDHash)
-	require.NoError(t, err)
-	assert.True(t, got.Redeemed)
+	store.AssertCalled(t, "Redeem", rec.ShareIDHash)
+}
+
+func TestRedeemAlreadyRedeemed(t *testing.T) {
+	store := storagemocks.NewStorage(t)
+	tok, rec := newToken(t)
+	store.On("Get", rec.ShareIDHash).Return(rec, nil)
+	store.On("Redeem", rec.ShareIDHash).Return(storage.ErrAlreadyRedeemed)
+
+	share := &collaboration.Share{Id: &collaboration.ShareId{OpaqueId: testShareID}}
+	s := newRedeemService(t, store, newGatewayMock(&collaboration.GetShareResponse{
+		Status: &rpc.Status{Code: rpc.Code_CODE_OK},
+		Share:  share,
+	}))
+
+	_, err := s.Redeem(context.Background(), tok)
+	assert.ErrorIs(t, err, ErrAlreadyRedeemed)
 }

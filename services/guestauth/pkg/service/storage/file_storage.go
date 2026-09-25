@@ -66,6 +66,10 @@ func (s *FileStorage) Redeem(shareIDHash string) error {
 		return err
 	}
 
+	if rec.Redeemed {
+		return ErrAlreadyRedeemed
+	}
+
 	rec.Redeemed = true
 	return s.add(rec)
 }

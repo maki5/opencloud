@@ -9,3 +9,7 @@ include ../../.make/default.mk
 include ../../.make/go.mk
 include ../../.make/release.mk
 include ../../.make/docs.mk
+
+.PHONY: go-generate
+go-generate: $(MOCKERY)
+	$(MOCKERY)

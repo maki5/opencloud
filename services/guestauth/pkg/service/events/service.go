@@ -28,7 +28,7 @@ type EventConsumer struct {
 	log    log.Logger
 	stream events.Stream
 
-	guestAuth *guestauth.GuestAuthService
+	guestAuth guestauth.GuestAuth
 
 	numConsumers int
 

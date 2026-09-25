@@ -18,7 +18,7 @@ type Options struct {
 	Stream           events.Stream
 	RegisteredEvents []events.Unmarshaller
 	NumConsumers     int
-	GuestAuthService *guestauth.GuestAuthService
+	GuestAuthService guestauth.GuestAuth
 }
 
 // Context configures a context for the guestauth service
@@ -57,7 +57,7 @@ func NumConsumers(num int) Option {
 }
 
 // GuestAuthService configures the guest auth domain service.
-func GuestAuthService(s *guestauth.GuestAuthService) Option {
+func GuestAuthService(s guestauth.GuestAuth) Option {
 	return func(o *Options) {
 		o.GuestAuthService = s
 	}

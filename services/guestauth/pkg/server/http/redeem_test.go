@@ -8,57 +8,19 @@ import (
 	"testing"
 	"time"
 
-	gateway "github.com/cs3org/go-cs3apis/cs3/gateway/v1beta1"
-	rpc "github.com/cs3org/go-cs3apis/cs3/rpc/v1beta1"
-	collaboration "github.com/cs3org/go-cs3apis/cs3/sharing/collaboration/v1beta1"
 	"github.com/opencloud-eu/opencloud/pkg/log"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/config"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/guestauth"
-	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/jwt"
+	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/guestauth/mocks"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/storage"
 	"github.com/opencloud-eu/opencloud/services/guestauth/pkg/service/token"
-	"github.com/opencloud-eu/reva/v2/pkg/rgrpc/todo/pool"
-	cs3mocks "github.com/opencloud-eu/reva/v2/tests/cs3mocks/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-const testShareID = "e0123456-7890-abcd-ef01-234567890abc"
-
-type gatewayTestSelector struct {
-	client gateway.GatewayAPIClient
-}
-
-func (s gatewayTestSelector) Next(...pool.Option) (gateway.GatewayAPIClient, error) {
-	return s.client, nil
-}
-
-func newGatewayMock() *cs3mocks.GatewayAPIClient {
-	gwc := &cs3mocks.GatewayAPIClient{}
-	gwc.On("Authenticate", mock.Anything, mock.Anything).
-		Return(&gateway.AuthenticateResponse{
-			Status: &rpc.Status{Code: rpc.Code_CODE_OK},
-			Token:  "token",
-		}, nil)
-	gwc.On("GetShare", mock.Anything, mock.Anything).Return(&collaboration.GetShareResponse{
-		Status: &rpc.Status{Code: rpc.Code_CODE_OK},
-		Share: &collaboration.Share{
-			Id: &collaboration.ShareId{OpaqueId: testShareID},
-		},
-	}, nil)
-	return gwc
-}
-
-func newRedeemHandler(t *testing.T, store storage.Storage) http.HandlerFunc {
+func newRedeemHandler(t *testing.T, svc guestauth.GuestAuth) http.HandlerFunc {
 	t.Helper()
-	svc := guestauth.NewGuestAuthService(
-		token.NewTokenService(),
-		store,
-		guestauth.GatewaySelector(gatewayTestSelector{client: newGatewayMock()}),
-		guestauth.ServiceAccount(config.ServiceAccount{ServiceAccountID: "sa-id", ServiceAccountSecret: "sa-secret"}),
-		guestauth.JWT(jwt.NewJwtService("test-secret", time.Hour)),
-	)
 	cfg := &config.Config{
 		JWT: config.JWT{
 			CookieName:   "oc_guest_session",
@@ -70,21 +32,14 @@ func newRedeemHandler(t *testing.T, store storage.Storage) http.HandlerFunc {
 }
 
 func TestRedeemHandler(t *testing.T) {
-	store := storage.NewFileStorage(t.TempDir())
-	ts := token.NewTokenService()
-	tok, err := ts.Generate(testShareID)
-	require.NoError(t, err)
-	require.NoError(t, store.Add(storage.Record{
-		ShareID:     testShareID,
-		ShareIDHash: tok.ShareIDHash,
-		SecretHash:  tok.SecretHash,
-	}))
+	svcMock := mocks.NewGuestAuth(t)
+	svcMock.On("Redeem", mock.Anything, "valid-token").Return("session-token", nil)
 
-	body, err := json.Marshal(RedeemRequest{Token: tok.String()})
+	body, err := json.Marshal(RedeemRequest{Token: "valid-token"})
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()
-	newRedeemHandler(t, store)(rr, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body))))
+	newRedeemHandler(t, svcMock)(rr, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body))))
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
@@ -95,18 +50,46 @@ func TestRedeemHandler(t *testing.T) {
 		}
 	}
 	require.NotNil(t, cookie)
+	assert.Equal(t, "session-token", cookie.Value)
 	assert.True(t, cookie.HttpOnly)
 	assert.Equal(t, "/", cookie.Path)
-	assert.NotEmpty(t, cookie.Value)
 }
 
-func TestRedeemHandlerInvalidToken(t *testing.T) {
-	store := storage.NewFileStorage(t.TempDir())
-	body, err := json.Marshal(RedeemRequest{Token: "not-a-valid-token"})
-	require.NoError(t, err)
+func TestRedeemHandlerErrorMapping(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{name: "already redeemed", err: guestauth.ErrAlreadyRedeemed, wantStatus: http.StatusConflict},
+		{name: "token expired", err: guestauth.ErrExpired, wantStatus: http.StatusGone},
+		{name: "token not found", err: storage.ErrNotFound, wantStatus: http.StatusNotFound},
+		{name: "invalid token", err: token.ErrInvalidToken, wantStatus: http.StatusUnauthorized},
+		{name: "share not found", err: guestauth.ErrShareNotFound, wantStatus: http.StatusNotFound},
+		{name: "share expired", err: guestauth.ErrShareExpired, wantStatus: http.StatusGone},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svcMock := mocks.NewGuestAuth(t)
+			svcMock.On("Redeem", mock.Anything, "token").Return("", tt.err)
+
+			body, err := json.Marshal(RedeemRequest{Token: "token"})
+			require.NoError(t, err)
+
+			rr := httptest.NewRecorder()
+			newRedeemHandler(t, svcMock)(rr, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body))))
+
+			assert.Equal(t, tt.wantStatus, rr.Code)
+		})
+	}
+}
+
+func TestRedeemHandlerMalformedBody(t *testing.T) {
+	svcMock := mocks.NewGuestAuth(t)
 
 	rr := httptest.NewRecorder()
-	newRedeemHandler(t, store)(rr, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body))))
+	newRedeemHandler(t, svcMock)(rr, httptest.NewRequest(http.MethodPost, "/", strings.NewReader("not-json")))
 
-	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }

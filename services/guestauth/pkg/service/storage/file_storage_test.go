@@ -89,6 +89,9 @@ func TestFileStorageRedeem(t *testing.T) {
 	got, err := s.Get(rec.ShareIDHash)
 	require.NoError(t, err)
 	assert.True(t, got.Redeemed)
+
+	err = s.Redeem(rec.ShareIDHash)
+	assert.ErrorIs(t, err, ErrAlreadyRedeemed)
 }
 
 func TestFileStorageRedeemMissing(t *testing.T) {

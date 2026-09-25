@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// ErrNotFound is returned when a record does not exist in the storage.
 var ErrNotFound = errors.New("record not found")
+var ErrAlreadyRedeemed = errors.New("token already redeemed")
 
 // Record holds the data persisted for a guest share token.
 type Record struct {
@@ -17,8 +17,6 @@ type Record struct {
 	Redeemed    bool      `json:"redeemed"`
 }
 
-// Storage is the interface for persisting token records. Implementations need
-// to be safe for concurrent use.
 type Storage interface {
 	Add(rec Record) error
 	Get(shareIDHash string) (Record, error)

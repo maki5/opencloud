@@ -19,7 +19,7 @@ func (s *EventConsumer) handleShareCreated(ctx context.Context, ev events.ShareC
 		return nil
 	}
 
-	tok, err := s.guestAuth.CreateToken(ev.ShareID.GetOpaqueId())
+	tok, err := s.guestAuth.CreateToken(ctx, ev.ShareID.GetOpaqueId())
 	if err != nil {
 		return err
 	}

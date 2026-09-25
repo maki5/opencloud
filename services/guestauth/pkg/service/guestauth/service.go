@@ -23,6 +23,15 @@ var ErrAlreadyRedeemed = errors.New("token already redeemed")
 var ErrShareNotFound = errors.New("share not found")
 var ErrShareExpired = errors.New("share expired")
 
+// GuestAuth is the domain service used by the transport and event layers.
+type GuestAuth interface {
+	CreateToken(ctx context.Context, shareID string) (*token.Token, error)
+	Redeem(ctx context.Context, tokenString string) (string, error)
+	CleanupShare(shareID string) error
+}
+
+var _ GuestAuth = (*GuestAuthService)(nil)
+
 // GuestAuthService contains the business logic shared by guestauth transport services.
 type GuestAuthService struct {
 	tokenSvc        *token.TokenService
@@ -47,17 +56,22 @@ func NewGuestAuthService(tokenSvc *token.TokenService, store storage.Storage, op
 	}
 }
 
-func (s *GuestAuthService) CreateToken(shareID string) (*token.Token, error) {
+func (s *GuestAuthService) CreateToken(ctx context.Context, shareID string) (*token.Token, error) {
 	tok, err := s.tokenSvc.Generate(shareID)
 	if err != nil {
 		return nil, err
 	}
 
-	// ShareCreated carries no expiration; expiry is checked against the share when the token is redeemed.
+	share, err := s.getShare(ctx, shareID)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := s.store.Add(storage.Record{
 		ShareID:     shareID,
 		ShareIDHash: tok.ShareIDHash,
 		SecretHash:  tok.SecretHash,
+		Expiry:      utils.TSToTime(share.GetExpiration()),
 		Redeemed:    false,
 	}); err != nil {
 		return nil, err
@@ -77,16 +91,14 @@ func (s *GuestAuthService) Redeem(ctx context.Context, tokenString string) (stri
 		return "", err
 	}
 
-	sessionToken, err := s.jwtService.Sign(rec.ShareID)
-	if err != nil {
-		return "", err
-	}
-
 	if err := s.store.Redeem(rec.ShareIDHash); err != nil {
+		if errors.Is(err, storage.ErrAlreadyRedeemed) {
+			return "", ErrAlreadyRedeemed
+		}
 		return "", err
 	}
 
-	return sessionToken, nil
+	return s.jwtService.Sign(rec.ShareID)
 }
 
 // CleanupShare removes a share's token record from storage. Missing records are ignored.
@@ -129,6 +141,20 @@ func (s *GuestAuthService) verifyToken(tokenString string) (storage.Record, erro
 
 // validateShare extracts the share information from the gateway and checks its existence and expiration.
 func (s *GuestAuthService) validateShare(ctx context.Context, shareID string) (*collaboration.Share, error) {
+	share, err := s.getShare(ctx, shareID)
+	if err != nil {
+		return nil, err
+	}
+
+	if exp := utils.TSToTime(share.GetExpiration()); !exp.IsZero() && exp.Before(time.Now()) {
+		return nil, ErrShareExpired
+	}
+
+	return share, nil
+}
+
+// getShare fetches a share from the gateway.
+func (s *GuestAuthService) getShare(ctx context.Context, shareID string) (*collaboration.Share, error) {
 	gwc, err := s.gatewaySelector.Next()
 	if err != nil {
 		return nil, err
@@ -163,10 +189,6 @@ func (s *GuestAuthService) validateShare(ctx context.Context, shareID string) (*
 	share := resp.GetShare()
 	if share == nil {
 		return nil, ErrShareNotFound
-	}
-
-	if exp := utils.TSToTime(share.GetExpiration()); !exp.IsZero() && exp.Before(time.Now()) {
-		return nil, ErrShareExpired
 	}
 
 	return share, nil

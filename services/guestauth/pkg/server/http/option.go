@@ -17,7 +17,7 @@ type Options struct {
 	Logger  log.Logger
 	Context context.Context
 	Config  *config.Config
-	Service *guestauth.GuestAuthService
+	Service guestauth.GuestAuth
 	Flags   []pflag.Flag
 }
 
@@ -54,7 +54,7 @@ func Config(val *config.Config) Option {
 }
 
 // Service provides a function to set the service option.
-func Service(val *guestauth.GuestAuthService) Option {
+func Service(val guestauth.GuestAuth) Option {
 	return func(o *Options) {
 		o.Service = val
 	}

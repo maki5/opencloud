@@ -18,7 +18,7 @@ type RedeemRequest struct {
 }
 
 // RedeemHandler validates the token submitted to the redeem endpoint.
-func RedeemHandler(log log.Logger, s *guestauth.GuestAuthService, cfg *config.Config) func(w http.ResponseWriter, r *http.Request) {
+func RedeemHandler(log log.Logger, s guestauth.GuestAuth, cfg *config.Config) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req RedeemRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
